@@ -206,7 +206,9 @@
         detail.querySelectorAll('.location-row').forEach(row=>row.classList.remove('is-active'));
         button.closest('.location-row').classList.add('is-active');
         if(window.matchMedia('(max-width:760px)').matches) detail.classList.remove('open');
-        clusters.zoomToShowLayer(marker,()=>{ map.setView(marker.getLatLng(),Math.max(map.getZoom(),11),{animate:true}); marker.openPopup(); });
+        map.stop();
+        map.setView(marker.getLatLng(),Math.max(map.getZoom(),11),{animate:false});
+        clusters.zoomToShowLayer(marker,()=>{ map.panTo(marker.getLatLng(),{animate:false}); marker.openPopup(); });
       }));
       detail.querySelectorAll('.province-group').forEach(group=>group.addEventListener('toggle',()=>{
         if(!group.open) return;

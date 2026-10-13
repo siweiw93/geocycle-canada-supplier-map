@@ -61,9 +61,16 @@
     .detail dd { margin:3px 0 0; overflow-wrap:anywhere; }
     .detail a { color:var(--blue); text-decoration-thickness:1px; text-underline-offset:2px; }
     .location-list { display:grid; gap:8px; margin-top:5px; }
-    .location-row { padding:8px 0; border-bottom:1px solid var(--line); }
+    .location-row { padding:5px 0 8px; border-bottom:1px solid var(--line); transition:background .15s ease, box-shadow .15s ease; }
     .location-row:last-child { border-bottom:0; }
     .location-row small { display:block; color:var(--muted); margin-top:3px; }
+    .location-focus { position:relative; display:block; width:100%; padding:5px 30px 5px 0; border:0; border-radius:4px; background:transparent; color:var(--ink); text-align:left; cursor:pointer; }
+    .location-focus::after { content:""; position:absolute; right:7px; top:12px; width:10px; height:10px; border:2px solid var(--green2); border-radius:50%; background:radial-gradient(circle, var(--green2) 0 2px, transparent 3px); }
+    .location-focus:hover { background:#f0f5fa; }
+    .location-focus:focus-visible { outline:3px solid rgba(240,183,67,.4); outline-offset:1px; }
+    .location-focus strong, .location-address { display:block; }
+    .location-address { margin-top:1px; font-weight:400; }
+    .location-row.is-active { padding-left:8px; background:#eaf2f9; box-shadow:inset 3px 0 0 var(--green2); }
     .province-groups { margin-top:6px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .province-group + .province-group { border-top:1px solid var(--line); }
     .province-group summary { display:grid; grid-template-columns:14px minmax(0, 1fr) auto; gap:9px; align-items:center; min-height:46px; padding:8px 2px; color:var(--ink); font-weight:800; cursor:pointer; list-style:none; }
@@ -164,24 +171,25 @@
     const escapeHtml = value => String(value??'').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const phoneLinks = value => String(value||'').split(/\s+\/\s+/).filter(Boolean).map(phone => `<a href="tel:${phone.replace(/[^+\d]/g,'')}">${escapeHtml(phone)}</a>`).join(' / ');
     const provinceNames = {AB:'Alberta',BC:'British Columbia',MB:'Manitoba',NB:'New Brunswick',NL:'Newfoundland and Labrador',NS:'Nova Scotia',NT:'Northwest Territories',NU:'Nunavut',ON:'Ontario',PE:'Prince Edward Island',QC:'Quebec',SK:'Saskatchewan',YT:'Yukon'};
-    const locationRow = location => {
+    const locationRow = (location,index) => {
       const source=location.sourceUrl||location.source;
       const address=location.fullAddress||location.address;
+      const siteName=location.siteName||location.city||'Company location';
       const locationPhone=location.phone?`<small>${phoneLinks(location.phone)}</small>`:'';
       const sourceLink=safeUrl(source)?`<small><a href="${escapeHtml(source)}" target="_blank" rel="noopener">Location source</a></small>`:'';
-      return `<div class="location-row"><strong>${escapeHtml(location.siteName||location.city||'Company location')}</strong><br>${escapeHtml(address)}${locationPhone}${sourceLink}</div>`;
+      return `<div class="location-row"><button class="location-focus" type="button" data-location-index="${index}" title="Show on map" aria-label="Show ${escapeHtml(siteName)} on map"><strong>${escapeHtml(siteName)}</strong><span class="location-address">${escapeHtml(address)}</span></button>${locationPhone}${sourceLink}</div>`;
     };
     function locationContent(c) {
       const locations=locationsOf(c);
       if (!locations.length) return '<div class="location-row">No published Canadian location</div>';
-      if (locations.length===1) return `<div class="location-list">${locationRow(locations[0])}</div>`;
+      if (locations.length===1) return `<div class="location-list">${locationRow(locations[0],0)}</div>`;
       const groups=new Map();
-      locations.forEach(location=>{ const code=provinceCode(location); const key=code||'OTHER'; if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(location); });
+      locations.forEach((location,index)=>{ const code=provinceCode(location); const key=code||'OTHER'; if(!groups.has(key)) groups.set(key,[]); groups.get(key).push({location,index}); });
       const expanded=locations.length<=8;
       return `<div class="province-groups">${[...groups.entries()].sort(([a],[b])=>(provinceNames[a]||a).localeCompare(provinceNames[b]||b)).map(([code,items])=>{
-        items.sort((a,b)=>`${a.city||''} ${a.siteName||''} ${a.fullAddress||a.address||''}`.localeCompare(`${b.city||''} ${b.siteName||''} ${b.fullAddress||b.address||''}`));
-        const label=provinceNames[code]||items[0].province||'Other locations';
-        return `<details class="province-group" data-province="${escapeHtml(code==='OTHER'?'':code)}"${expanded?' open':''}><summary><span>${escapeHtml(label)}</span><span class="province-count">${items.length}</span></summary><div class="location-list">${items.map(locationRow).join('')}</div></details>`;
+        items.sort((a,b)=>`${a.location.city||''} ${a.location.siteName||''} ${a.location.fullAddress||a.location.address||''}`.localeCompare(`${b.location.city||''} ${b.location.siteName||''} ${b.location.fullAddress||b.location.address||''}`));
+        const label=provinceNames[code]||items[0].location.province||'Other locations';
+        return `<details class="province-group" data-province="${escapeHtml(code==='OTHER'?'':code)}"${expanded?' open':''}><summary><span>${escapeHtml(label)}</span><span class="province-count">${items.length}</span></summary><div class="location-list">${items.map(({location,index})=>locationRow(location,index)).join('')}</div></details>`;
       }).join('')}</div>`;
     }
     function showDetail(c) {
@@ -192,6 +200,14 @@
       detail.scrollTop=0;
       detail.querySelector('.detail-close').addEventListener('click',()=>detail.classList.remove('open'));
       const markers = markerByName.get(c.name) || [];
+      detail.querySelectorAll('.location-focus').forEach(button=>button.addEventListener('click',()=>{
+        const marker=markers.find(candidate=>candidate.options.locationIndex===Number(button.dataset.locationIndex));
+        if(!marker) return;
+        detail.querySelectorAll('.location-row').forEach(row=>row.classList.remove('is-active'));
+        button.closest('.location-row').classList.add('is-active');
+        if(window.matchMedia('(max-width:760px)').matches) detail.classList.remove('open');
+        clusters.zoomToShowLayer(marker,()=>{ map.setView(marker.getLatLng(),Math.max(map.getZoom(),11),{animate:true}); marker.openPopup(); });
+      }));
       detail.querySelectorAll('.province-group').forEach(group=>group.addEventListener('toggle',()=>{
         if(!group.open) return;
         if(locations.length>8) detail.querySelectorAll('.province-group[open]').forEach(other=>{ if(other!==group) other.open=false; });
@@ -214,7 +230,7 @@
         const locationText=locationsOf(c).length?` · ${locationsOf(c).length} ${locationsOf(c).length===1?'location':'locations'}`:'';
         const li=document.createElement('li'); const btn=document.createElement('button'); btn.type='button'; btn.className='company-item'; btn.dataset.name=c.name; btn.innerHTML=`<span class="monogram">${brand}</span><span><span class="company-name">${escapeHtml(c.name)}</span><span class="company-meta">${provinceText}${locationText}</span></span>`; btn.addEventListener('click',()=>showDetail(c)); li.appendChild(btn); list.appendChild(li);
         const markers=[];
-        mappedLocations(c).forEach(location=>{ const icon=L.divIcon({className:'marker-chip',html:brand}); const marker=L.marker([location.latitude,location.longitude],{icon,title:c.name,provinceCode:provinceCode(location)}).bindPopup(`<div class="popup-name">${escapeHtml(c.name)}</div><strong>${escapeHtml(location.siteName||location.city||'Company location')}</strong><div>${escapeHtml(location.fullAddress||location.address)}</div>`); marker.on('click',()=>showDetail(c)); clusters.addLayer(marker); markers.push(marker); });
+        locationsOf(c).forEach((location,locationIndex)=>{ if(!Number.isFinite(location.latitude)||!Number.isFinite(location.longitude)) return; const icon=L.divIcon({className:'marker-chip',html:brand}); const marker=L.marker([location.latitude,location.longitude],{icon,title:c.name,provinceCode:provinceCode(location),locationIndex}).bindPopup(`<div class="popup-name">${escapeHtml(c.name)}</div><strong>${escapeHtml(location.siteName||location.city||'Company location')}</strong><div>${escapeHtml(location.fullAddress||location.address)}</div>`); marker.on('click',()=>showDetail(c)); clusters.addLayer(marker); markers.push(marker); });
         if(markers.length) markerByName.set(c.name,markers);
       });
       resultCount.textContent = `Showing ${filtered.length} of ${companies.length}`;

@@ -51,7 +51,7 @@
     .legend { position:absolute; left:14px; bottom:20px; z-index:500; background:rgba(255,255,255,.96); border:1px solid var(--line); padding:10px 12px; border-radius:6px; box-shadow:0 4px 16px rgba(23,33,31,.13); font-size:12px; }
     .legend-title { font-weight:800; margin-bottom:5px; }
     .legend-row { display:flex; align-items:center; gap:7px; margin-top:4px; }
-    .detail { position:absolute; right:14px; top:66px; z-index:600; width:min(380px, calc(100% - 28px)); max-height:calc(100% - 86px); overflow:auto; background:white; border:1px solid var(--line); border-radius:8px; box-shadow:0 12px 32px rgba(23,33,31,.2); padding:18px; display:none; }
+    .detail { position:absolute; right:14px; top:66px; z-index:1100; width:min(380px, calc(100% - 28px)); max-height:calc(100% - 86px); overflow:auto; background:white; border:1px solid var(--line); border-radius:8px; box-shadow:0 12px 32px rgba(23,33,31,.2); padding:18px; display:none; }
     .detail.open { display:block; }
     .detail-close { position:sticky; top:0; z-index:2; float:right; width:38px; height:38px; margin:-8px -8px 4px 8px; border:1px solid var(--line); border-radius:6px; background:white; color:var(--ink); font-size:24px; cursor:pointer; box-shadow:0 2px 8px rgba(9,37,75,.1); }
     .detail h2 { margin:0 38px 5px 0; font-size:20px; line-height:1.25; }
@@ -64,6 +64,15 @@
     .location-row { padding:8px 0; border-bottom:1px solid var(--line); }
     .location-row:last-child { border-bottom:0; }
     .location-row small { display:block; color:var(--muted); margin-top:3px; }
+    .province-groups { margin-top:6px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .province-group + .province-group { border-top:1px solid var(--line); }
+    .province-group summary { display:grid; grid-template-columns:14px minmax(0, 1fr) auto; gap:9px; align-items:center; min-height:46px; padding:8px 2px; color:var(--ink); font-weight:800; cursor:pointer; list-style:none; }
+    .province-group summary::-webkit-details-marker { display:none; }
+    .province-group summary::before { content:""; width:7px; height:7px; border-right:2px solid var(--green2); border-bottom:2px solid var(--green2); transform:rotate(-45deg); transition:transform .16s ease; }
+    .province-group[open] summary::before { transform:rotate(45deg); }
+    .province-group summary:focus-visible { outline:3px solid rgba(240,183,67,.4); outline-offset:2px; border-radius:4px; }
+    .province-count { min-width:28px; padding:2px 6px; border-radius:4px; background:#eaf0f7; color:var(--green2); font-size:12px; text-align:center; }
+    .province-group .location-list { margin:0 0 6px 23px; }
     .source-note { margin-top:16px; padding-top:12px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
     .leaflet-popup-content { margin:12px 14px; }
     .popup-name { font-weight:800; margin-bottom:4px; }
@@ -154,13 +163,43 @@
     const safeUrl = value => /^https?:\/\//i.test(value||'') ? value : '';
     const escapeHtml = value => String(value??'').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const phoneLinks = value => String(value||'').split(/\s+\/\s+/).filter(Boolean).map(phone => `<a href="tel:${phone.replace(/[^+\d]/g,'')}">${escapeHtml(phone)}</a>`).join(' / ');
+    const provinceNames = {AB:'Alberta',BC:'British Columbia',MB:'Manitoba',NB:'New Brunswick',NL:'Newfoundland and Labrador',NS:'Nova Scotia',NT:'Northwest Territories',NU:'Nunavut',ON:'Ontario',PE:'Prince Edward Island',QC:'Quebec',SK:'Saskatchewan',YT:'Yukon'};
+    const locationRow = location => {
+      const source=location.sourceUrl||location.source;
+      const address=location.fullAddress||location.address;
+      const locationPhone=location.phone?`<small>${phoneLinks(location.phone)}</small>`:'';
+      const sourceLink=safeUrl(source)?`<small><a href="${escapeHtml(source)}" target="_blank" rel="noopener">Location source</a></small>`:'';
+      return `<div class="location-row"><strong>${escapeHtml(location.siteName||location.city||'Company location')}</strong><br>${escapeHtml(address)}${locationPhone}${sourceLink}</div>`;
+    };
+    function locationContent(c) {
+      const locations=locationsOf(c);
+      if (!locations.length) return '<div class="location-row">No published Canadian location</div>';
+      if (locations.length===1) return `<div class="location-list">${locationRow(locations[0])}</div>`;
+      const groups=new Map();
+      locations.forEach(location=>{ const code=provinceCode(location); const key=code||'OTHER'; if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(location); });
+      const expanded=locations.length<=8;
+      return `<div class="province-groups">${[...groups.entries()].sort(([a],[b])=>(provinceNames[a]||a).localeCompare(provinceNames[b]||b)).map(([code,items])=>{
+        items.sort((a,b)=>`${a.city||''} ${a.siteName||''} ${a.fullAddress||a.address||''}`.localeCompare(`${b.city||''} ${b.siteName||''} ${b.fullAddress||b.address||''}`));
+        const label=provinceNames[code]||items[0].province||'Other locations';
+        return `<details class="province-group" data-province="${escapeHtml(code==='OTHER'?'':code)}"${expanded?' open':''}><summary><span>${escapeHtml(label)}</span><span class="province-count">${items.length}</span></summary><div class="location-list">${items.map(locationRow).join('')}</div></details>`;
+      }).join('')}</div>`;
+    }
     function showDetail(c) {
       document.querySelectorAll('.company-item').forEach(el=>el.classList.toggle('active', el.dataset.name===c.name));
-      const locationRows=locationsOf(c).map(location=>{ const source=location.sourceUrl||location.source; const address=location.fullAddress||location.address; const locationPhone=location.phone?`<small>${phoneLinks(location.phone)}</small>`:''; const sourceLink=safeUrl(source)?`<small><a href="${escapeHtml(source)}" target="_blank" rel="noopener">Location source</a></small>`:''; return `<div class="location-row"><strong>${escapeHtml(location.siteName||location.city||'Company location')}</strong><br>${escapeHtml(address)}${locationPhone}${sourceLink}</div>`; }).join('');
-      detail.innerHTML = `<button class="detail-close" type="button" aria-label="Close details">×</button>${c.logoPath?`<img class="detail-logo" src="${escapeHtml(c.logoPath)}" alt="${escapeHtml(c.name)} logo">`:''}<h2>${escapeHtml(c.name)}</h2><dl><dt>Locations${locationsOf(c).length>1?` (${locationsOf(c).length})`:''}</dt><dd><div class="location-list">${locationRows||'<div class="location-row">No published Canadian location</div>'}</div></dd><dt>Website</dt><dd>${safeUrl(c.website)?`<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener">${escapeHtml(c.website)}</a>`:'Not confirmed'}</dd><dt>Public phone</dt><dd>${c.phone?phoneLinks(c.phone):'Not published on the official website'}</dd><dt>Directory source</dt><dd><a href="${escapeHtml(c.sourceUrl)}" target="_blank" rel="noopener">Seeds Canada supplier directory</a></dd>${safeUrl(c.phoneSource)?`<dt>Phone source</dt><dd><a href="${escapeHtml(c.phoneSource)}" target="_blank" rel="noopener">Official website</a></dd>`:''}${safeUrl(c.logoSource)?`<dt>Logo source</dt><dd><a href="${escapeHtml(c.logoSource)}" target="_blank" rel="noopener">Official website asset</a></dd>`:''}<dt>Checked</dt><dd>${escapeHtml(c.checkedDate || 'October 13, 2026')}</dd></dl><div class="source-note">Locations and phone numbers come from public sources and are provided for supplier research.</div>`;
+      const locations=locationsOf(c);
+      detail.innerHTML = `<button class="detail-close" type="button" aria-label="Close details">×</button>${c.logoPath?`<img class="detail-logo" src="${escapeHtml(c.logoPath)}" alt="${escapeHtml(c.name)} logo">`:''}<h2>${escapeHtml(c.name)}</h2><dl><dt>Locations${locations.length>1?` (${locations.length})`:''}</dt><dd>${locationContent(c)}</dd><dt>Website</dt><dd>${safeUrl(c.website)?`<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener">${escapeHtml(c.website)}</a>`:'Not confirmed'}</dd><dt>Public phone</dt><dd>${c.phone?phoneLinks(c.phone):'Not published on the official website'}</dd><dt>Directory source</dt><dd><a href="${escapeHtml(c.sourceUrl)}" target="_blank" rel="noopener">Seeds Canada supplier directory</a></dd>${safeUrl(c.phoneSource)?`<dt>Phone source</dt><dd><a href="${escapeHtml(c.phoneSource)}" target="_blank" rel="noopener">Official website</a></dd>`:''}${safeUrl(c.logoSource)?`<dt>Logo source</dt><dd><a href="${escapeHtml(c.logoSource)}" target="_blank" rel="noopener">Official website asset</a></dd>`:''}<dt>Checked</dt><dd>${escapeHtml(c.checkedDate || 'October 13, 2026')}</dd></dl><div class="source-note">Locations and phone numbers come from public sources and are provided for supplier research.</div>`;
       detail.classList.add('open');
+      detail.scrollTop=0;
       detail.querySelector('.detail-close').addEventListener('click',()=>detail.classList.remove('open'));
       const markers = markerByName.get(c.name) || [];
+      detail.querySelectorAll('.province-group').forEach(group=>group.addEventListener('toggle',()=>{
+        if(!group.open) return;
+        if(locations.length>8) detail.querySelectorAll('.province-group[open]').forEach(other=>{ if(other!==group) other.open=false; });
+        const code=group.dataset.province;
+        const provinceMarkers=markers.filter(marker=>marker.options.provinceCode===code);
+        if(provinceMarkers.length===1) map.setView(provinceMarkers[0].getLatLng(),8);
+        if(provinceMarkers.length>1) map.fitBounds(L.latLngBounds(provinceMarkers.map(marker=>marker.getLatLng())),{padding:[44,44],maxZoom:9});
+      }));
       if (markers.length===1) { clusters.zoomToShowLayer(markers[0],()=>{ markers[0].openPopup(); map.panTo(markers[0].getLatLng()); }); }
       if (markers.length>1) map.fitBounds(L.latLngBounds(markers.map(marker=>marker.getLatLng())),{padding:[44,44],maxZoom:9});
     }
@@ -175,7 +214,7 @@
         const locationText=locationsOf(c).length?` · ${locationsOf(c).length} ${locationsOf(c).length===1?'location':'locations'}`:'';
         const li=document.createElement('li'); const btn=document.createElement('button'); btn.type='button'; btn.className='company-item'; btn.dataset.name=c.name; btn.innerHTML=`<span class="monogram">${brand}</span><span><span class="company-name">${escapeHtml(c.name)}</span><span class="company-meta">${provinceText}${locationText}</span></span>`; btn.addEventListener('click',()=>showDetail(c)); li.appendChild(btn); list.appendChild(li);
         const markers=[];
-        mappedLocations(c).forEach(location=>{ const icon=L.divIcon({className:'marker-chip',html:brand}); const marker=L.marker([location.latitude,location.longitude],{icon,title:c.name}).bindPopup(`<div class="popup-name">${escapeHtml(c.name)}</div><strong>${escapeHtml(location.siteName||location.city||'Company location')}</strong><div>${escapeHtml(location.fullAddress||location.address)}</div>`); marker.on('click',()=>showDetail(c)); clusters.addLayer(marker); markers.push(marker); });
+        mappedLocations(c).forEach(location=>{ const icon=L.divIcon({className:'marker-chip',html:brand}); const marker=L.marker([location.latitude,location.longitude],{icon,title:c.name,provinceCode:provinceCode(location)}).bindPopup(`<div class="popup-name">${escapeHtml(c.name)}</div><strong>${escapeHtml(location.siteName||location.city||'Company location')}</strong><div>${escapeHtml(location.fullAddress||location.address)}</div>`); marker.on('click',()=>showDetail(c)); clusters.addLayer(marker); markers.push(marker); });
         if(markers.length) markerByName.set(c.name,markers);
       });
       resultCount.textContent = `Showing ${filtered.length} of ${companies.length}`;

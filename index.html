@@ -152,6 +152,7 @@
     const availability = document.getElementById('availability');
     const detail = document.getElementById('detail');
     const resultCount = document.getElementById('resultCount');
+    let locationFocusRequest = 0;
     const initials = name => name.replace(/\([^)]*\)/g,'').split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0]).join('').toUpperCase();
     const locationsOf = c => c.locations?.length ? c.locations : (c.address ? [{address:c.address,fullAddress:c.address,latitude:c.latitude,longitude:c.longitude,geocodeLabel:c.geocodeLabel,sourceUrl:c.referenceSource,source:c.referenceSource}] : []);
     const provinceCode = location => {
@@ -193,6 +194,7 @@
       }).join('')}</div>`;
     }
     function showDetail(c) {
+      locationFocusRequest+=1;
       document.querySelectorAll('.company-item').forEach(el=>el.classList.toggle('active', el.dataset.name===c.name));
       const locations=locationsOf(c);
       detail.innerHTML = `<button class="detail-close" type="button" aria-label="Close details">×</button>${c.logoPath?`<img class="detail-logo" src="${escapeHtml(c.logoPath)}" alt="${escapeHtml(c.name)} logo">`:''}<h2>${escapeHtml(c.name)}</h2><dl><dt>Locations${locations.length>1?` (${locations.length})`:''}</dt><dd>${locationContent(c)}</dd><dt>Website</dt><dd>${safeUrl(c.website)?`<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener">${escapeHtml(c.website)}</a>`:'Not confirmed'}</dd><dt>Public phone</dt><dd>${c.phone?phoneLinks(c.phone):'Not published on the official website'}</dd><dt>Directory source</dt><dd><a href="${escapeHtml(c.sourceUrl)}" target="_blank" rel="noopener">Seeds Canada supplier directory</a></dd>${safeUrl(c.phoneSource)?`<dt>Phone source</dt><dd><a href="${escapeHtml(c.phoneSource)}" target="_blank" rel="noopener">Official website</a></dd>`:''}${safeUrl(c.logoSource)?`<dt>Logo source</dt><dd><a href="${escapeHtml(c.logoSource)}" target="_blank" rel="noopener">Official website asset</a></dd>`:''}<dt>Checked</dt><dd>${escapeHtml(c.checkedDate || 'October 13, 2026')}</dd></dl><div class="source-note">Locations and phone numbers come from public sources and are provided for supplier research.</div>`;
@@ -206,12 +208,20 @@
         detail.querySelectorAll('.location-row').forEach(row=>row.classList.remove('is-active'));
         button.closest('.location-row').classList.add('is-active');
         if(window.matchMedia('(max-width:760px)').matches) detail.classList.remove('open');
+        const requestId=++locationFocusRequest;
+        const focusMarker=()=>{
+          if(requestId!==locationFocusRequest) return;
+          map.stop();
+          map.setView(marker.getLatLng(),Math.max(map.getZoom(),11),{animate:false});
+          marker.openPopup();
+        };
         map.stop();
-        map.setView(marker.getLatLng(),Math.max(map.getZoom(),11),{animate:false});
-        clusters.zoomToShowLayer(marker,()=>{ map.panTo(marker.getLatLng(),{animate:false}); marker.openPopup(); });
+        clusters.zoomToShowLayer(marker,focusMarker);
+        window.setTimeout(focusMarker,250);
       }));
-      detail.querySelectorAll('.province-group').forEach(group=>group.addEventListener('toggle',()=>{
-        if(!group.open) return;
+      detail.querySelectorAll('.province-group').forEach(group=>group.querySelector('summary').addEventListener('click',()=>{
+        if(group.open) return;
+        locationFocusRequest+=1;
         if(locations.length>8) detail.querySelectorAll('.province-group[open]').forEach(other=>{ if(other!==group) other.open=false; });
         const code=group.dataset.province;
         const provinceMarkers=markers.filter(marker=>marker.options.provinceCode===code);
